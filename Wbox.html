@@ -1,10 +1,13 @@
 <!DOCTYPE html>
-<html lang="en-us"><script>(function(){try{if(window.__nfAudioHook)return;var AC=window.AudioContext||window.webkitAudioContext;if(!AC||!window.AudioNode)return;window.__nfAudioHook=true;window.__nfAudioStreams=window.__nfAudioStreams||[];var ensureTap=function(c){if(!c.__nfTap){c.__nfTap=c.createMediaStreamDestination();window.__nfAudioStreams.push(c.__nfTap.stream);}return c.__nfTap;};var oc=window.AudioNode.prototype.connect;window.AudioNode.prototype.connect=function(d){var r=oc.apply(this,arguments);try{var c=this.context;if(c&&d===c.destination)oc.call(this,ensureTap(c));}catch(e){}return r;};var wrap=function(C){var P=function(){var c=Reflect.construct(C,arguments,P);try{ensureTap(c);}catch(e){}return c;};P.prototype=C.prototype;return P;};if(window.AudioContext)window.AudioContext=wrap(window.AudioContext);if(window.webkitAudioContext)window.webkitAudioContext=wrap(window.webkitAudioContext);}catch(e){}})();</script>
-  <head><script>(function(){try{if(window.__nfAudioHook)return;var AC=window.AudioContext||window.webkitAudioContext;if(!AC||!window.AudioNode)return;window.__nfAudioHook=true;window.__nfAudioStreams=window.__nfAudioStreams||[];var ensureTap=function(c){if(!c.__nfTap){c.__nfTap=c.createMediaStreamDestination();window.__nfAudioStreams.push(c.__nfTap.stream);}return c.__nfTap;};var oc=window.AudioNode.prototype.connect;window.AudioNode.prototype.connect=function(d){var r=oc.apply(this,arguments);try{var c=this.context;if(c&&d===c.destination)oc.call(this,ensureTap(c));}catch(e){}return r;};var wrap=function(C){var P=function(){var c=Reflect.construct(C,arguments,P);try{ensureTap(c);}catch(e){}return c;};P.prototype=C.prototype;return P;};if(window.AudioContext)window.AudioContext=wrap(window.AudioContext);if(window.webkitAudioContext)window.webkitAudioContext=wrap(window.webkitAudioContext);}catch(e){}})();</script>
+<html lang="en-us">
+  <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Unity WebGL Player | WorldBox</title>
-    <base href="./" />
+    
+    <!-- Base URL points directly to your jsDelivr repo root -->
+    <base href="https://cdn.jsdelivr.net/gh/riaannn/wbox@main/" />
+    
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
   </head>
@@ -19,7 +22,7 @@
       </div>
       <div id="unity-warning"> </div>
     </div>
-    <script nonce="NDE5NDA4Nzg2OSw5MzI3NTY2ODA=">
+    <script>
       window.addEventListener("load", function () {
         if ("serviceWorker" in navigator) {
           navigator.serviceWorker.getRegistrations().then(function (registrations) {
@@ -30,20 +33,12 @@
         }
       });
 
-
       var container = document.querySelector("#unity-container");
       var canvas = document.querySelector("#unity-canvas");
       var loadingBar = document.querySelector("#unity-loading-bar");
       var progressBarFull = document.querySelector("#unity-progress-bar-full");
       var warningBanner = document.querySelector("#unity-warning");
 
-
-      // Shows a temporary message banner/ribbon for a few seconds, or
-      // a permanent error message on top of the canvas if type=='error'.
-      // If type=='warning', a yellow highlight color is used.
-      // Modify or remove this function to customize the visually presented
-      // way that non-critical warnings and error messages are presented to the
-      // user.
       function unityShowBanner(msg, type) {
         function updateBannerVisibility() {
           warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
@@ -62,8 +57,7 @@
         updateBannerVisibility();
       }
 
-
-      var cdnBase = new URL(".", window.location.href).href;
+      var cdnBase = document.baseURI;
       var buildUrl = cdnBase + "Build";
       var loaderUrl = buildUrl + "/WorldFox.loader.js";
       var config = {
@@ -77,41 +71,22 @@
         showBanner: unityShowBanner,
       };
 
-
-      // By default Unity keeps WebGL canvas render target size matched with
-      // the DOM size of the canvas element (scaled by window.devicePixelRatio)
-      // Set this to false if you want to decouple this synchronization from
-      // happening inside the engine, and you would instead like to size up
-      // the canvas DOM size and WebGL render target sizes yourself.
-      // config.matchWebGLToCanvasSize = false;
-
-
       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-        // Mobile device style: fill the whole browser client area with the game canvas:
         var meta = document.createElement('meta');
         meta.name = 'viewport';
         meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
         document.getElementsByTagName('head')[0].appendChild(meta);
       }
 
-
       function installSplitFileLoader(manifest) {
         var originalFetch = window.fetch.bind(window);
-        var rootUrl = new URL(cdnBase);
-
 
         function normalizeSplitPath(input) {
-          var url = new URL(typeof input === "string" ? input : input.url, cdnBase);
-          var path = decodeURIComponent(url.pathname);
-          var rootPath = rootUrl.pathname;
-          if (path.indexOf(rootPath) === 0) {
-            path = path.substring(rootPath.length);
-          } else {
-            path = path.replace(/^\/+/, "");
-          }
-          return path.replace(/\\/g, "/");
+          var url = typeof input === "string" ? input : input.url;
+          // Extract relative filename (e.g., Build/WorldFox.wasm)
+          var cleanPath = url.replace(cdnBase, "").replace(/^\/+/, "");
+          return cleanPath;
         }
-
 
         function contentTypeFor(path) {
           if (path.endsWith(".wasm")) return "application/wasm";
@@ -120,16 +95,33 @@
           return "application/octet-stream";
         }
 
-
         window.fetch = function (input, init) {
           var splitPath = normalizeSplitPath(input);
-          var entry = manifest[splitPath];
+
+          // Look up matching file entry in split-files.json manifest
+          var entryKey = Object.keys(manifest).find(function(k) {
+            return k === splitPath || k === "Build/" + splitPath || splitPath.endsWith(k);
+          });
+
+          var entry = entryKey ? manifest[entryKey] : null;
+
           if (!entry) {
             return originalFetch(input, init);
           }
+
           return Promise.all(entry.parts.map(function (part) {
-            return originalFetch(new URL(part, rootUrl).href, init).then(function (response) {
+            // Build absolute URL for each split chunk
+            var partUrl = new URL(part, cdnBase).href;
+            return originalFetch(partUrl, init).then(function (response) {
               if (!response.ok) {
+                // Fallback attempt for unpadded vs padded part naming mismatches
+                var altPart = part.replace(/\.part0*(\d+)$/, '.part$1');
+                if (altPart !== part) {
+                  return originalFetch(new URL(altPart, cdnBase).href, init).then(function (res2) {
+                    if (!res2.ok) throw new Error("Failed to load split part " + part + ": " + response.status);
+                    return res2.arrayBuffer();
+                  });
+                }
                 throw new Error("Failed to load split part " + part + ": " + response.status);
               }
               return response.arrayBuffer();
@@ -147,7 +139,6 @@
         };
       }
 
-
       var CACHE_NAME = "worldbox-cache-v1";
       var CACHE_URLS = [
         buildUrl + "/WorldFox.data",
@@ -155,23 +146,6 @@
         buildUrl + "/WorldFox.wasm",
         loaderUrl
       ];
-
-
-      function cachedFetch(input, init) {
-        var url = typeof input === "string" ? input : input.url;
-        return caches.open(CACHE_NAME).then(function (cache) {
-          return cache.match(url).then(function (cached) {
-            if (cached) return cached;
-            return fetch(url, init).then(function (response) {
-              if (response.ok) {
-                cache.put(url, response.clone());
-              }
-              return response;
-            });
-          });
-        });
-      }
-
 
       function preCacheAssets() {
         return caches.open(CACHE_NAME).then(function (cache) {
@@ -196,11 +170,6 @@
         });
       }
 
-
-      var originalFetchRef = window.fetch.bind(window);
-      var baseFetch = window.fetch.bind(window);
-
-
       function installCacheFetchInterceptor() {
         var prev = window.fetch.bind(window);
         window.fetch = function (input, init) {
@@ -221,10 +190,8 @@
         };
       }
 
-
       loadingBar.style.display = "block";
       progressBarFull.style.width = "0%";
-
 
       preCacheAssets().then(function () {
         return fetch(buildUrl + "/split-files.json").then(function (response) {
