@@ -7,8 +7,8 @@
     
     <base href="https://cdn.jsdelivr.net/gh/riaannn/wbox@main/" />
     
-    <link rel="shortcut icon" href="TemplateData/favicon.ico">
-    <link rel="stylesheet" href="TemplateData/style.css">
+    <link rel="shortcut icon" href="https://cdn.jsdelivr.net/gh/riaannn/wbox@main/TemplateData/favicon.ico">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/riaannn/wbox@main/TemplateData/style.css">
   </head>
   <body>
     <div id="unity-container">
@@ -22,7 +22,7 @@
       <div id="unity-warning"> </div>
     </div>
     <script>
-      // Safe ServiceWorker check (avoids InvalidStateError in blob/about:blank windows)
+      // Safe Service Worker unregister guard (prevents InvalidStateError in about:blank)
       try {
         if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
           navigator.serviceWorker.getRegistrations().then(function (registrations) {
@@ -31,7 +31,7 @@
             });
           }).catch(function() {});
         }
-      } catch(e) {}
+      } catch (e) {}
 
       var container = document.querySelector("#unity-container");
       var canvas = document.querySelector("#unity-canvas");
@@ -92,7 +92,8 @@
 
           // Find key matching request path in manifest
           var matchedKey = Object.keys(manifest).find(function(key) {
-            return url.endsWith(key) || url.endsWith(key.replace(/^Build\//, ""));
+            var filename = key.split('/').pop();
+            return url.endsWith(key) || url.endsWith(filename);
           });
 
           var entry = matchedKey ? manifest[matchedKey] : null;
@@ -102,13 +103,13 @@
           }
 
           return Promise.all(entry.parts.map(function (part) {
-            // Clean up relative split path
-            var cleanPart = part.replace(/^Build\//, "");
-            var partUrl = buildUrl + "/" + cleanPart;
+            // Extract filename to ensure absolute CDN URL construction
+            var partFilename = part.split('/').pop();
+            var absolutePartUrl = buildUrl + "/" + partFilename;
 
-            return originalFetch(partUrl, init).then(function (response) {
+            return originalFetch(absolutePartUrl, init).then(function (response) {
               if (!response.ok) {
-                throw new Error("Failed to load split part " + partUrl + ": " + response.status);
+                throw new Error("Failed to load split part " + absolutePartUrl + ": " + response.status);
               }
               return response.arrayBuffer();
             });
@@ -128,7 +129,7 @@
       loadingBar.style.display = "block";
       progressBarFull.style.width = "0%";
 
-      // Fetch split file manifest directly from CDN
+      // Fetch split file manifest directly from CDN using absolute URL
       fetch(buildUrl + "/split-files.json")
         .then(function (response) {
           return response.ok ? response.json() : {};
