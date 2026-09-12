@@ -5,7 +5,6 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Unity WebGL Player | WorldBox</title>
     
-    <!-- Base URL points directly to your jsDelivr repo root -->
     <base href="https://cdn.jsdelivr.net/gh/riaannn/wbox@main/" />
     
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
@@ -23,15 +22,16 @@
       <div id="unity-warning"> </div>
     </div>
     <script>
-      window.addEventListener("load", function () {
-        if ("serviceWorker" in navigator) {
+      // Safe ServiceWorker check (avoids InvalidStateError in blob/about:blank windows)
+      try {
+        if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
           navigator.serviceWorker.getRegistrations().then(function (registrations) {
             registrations.forEach(function (registration) {
               registration.unregister();
             });
-          });
+          }).catch(function() {});
         }
-      });
+      } catch(e) {}
 
       var container = document.querySelector("#unity-container");
       var canvas = document.querySelector("#unity-canvas");
@@ -57,7 +57,7 @@
         updateBannerVisibility();
       }
 
-      var cdnBase = document.baseURI;
+      var cdnBase = "https://cdn.jsdelivr.net/gh/riaannn/wbox@main/";
       var buildUrl = cdnBase + "Build";
       var loaderUrl = buildUrl + "/WorldFox.loader.js";
       var config = {
@@ -81,138 +81,74 @@
       function installSplitFileLoader(manifest) {
         var originalFetch = window.fetch.bind(window);
 
-        function normalizeSplitPath(input) {
-          var url = typeof input === "string" ? input : input.url;
-          // Extract relative filename (e.g., Build/WorldFox.wasm)
-          var cleanPath = url.replace(cdnBase, "").replace(/^\/+/, "");
-          return cleanPath;
-        }
-
         function contentTypeFor(path) {
           if (path.endsWith(".wasm")) return "application/wasm";
           if (path.endsWith(".js")) return "application/javascript";
-          if (path.endsWith(".data") || path.endsWith(".bank")) return "application/octet-stream";
           return "application/octet-stream";
         }
 
         window.fetch = function (input, init) {
-          var splitPath = normalizeSplitPath(input);
+          var url = typeof input === "string" ? input : input.url;
 
-          // Look up matching file entry in split-files.json manifest
-          var entryKey = Object.keys(manifest).find(function(k) {
-            return k === splitPath || k === "Build/" + splitPath || splitPath.endsWith(k);
+          // Find key matching request path in manifest
+          var matchedKey = Object.keys(manifest).find(function(key) {
+            return url.endsWith(key) || url.endsWith(key.replace(/^Build\//, ""));
           });
 
-          var entry = entryKey ? manifest[entryKey] : null;
+          var entry = matchedKey ? manifest[matchedKey] : null;
 
-          if (!entry) {
+          if (!entry || !entry.parts || !entry.parts.length) {
             return originalFetch(input, init);
           }
 
           return Promise.all(entry.parts.map(function (part) {
-            // Build absolute URL for each split chunk
-            var partUrl = new URL(part, cdnBase).href;
+            // Clean up relative split path
+            var cleanPart = part.replace(/^Build\//, "");
+            var partUrl = buildUrl + "/" + cleanPart;
+
             return originalFetch(partUrl, init).then(function (response) {
               if (!response.ok) {
-                // Fallback attempt for unpadded vs padded part naming mismatches
-                var altPart = part.replace(/\.part0*(\d+)$/, '.part$1');
-                if (altPart !== part) {
-                  return originalFetch(new URL(altPart, cdnBase).href, init).then(function (res2) {
-                    if (!res2.ok) throw new Error("Failed to load split part " + part + ": " + response.status);
-                    return res2.arrayBuffer();
-                  });
-                }
-                throw new Error("Failed to load split part " + part + ": " + response.status);
+                throw new Error("Failed to load split part " + partUrl + ": " + response.status);
               }
               return response.arrayBuffer();
             });
           })).then(function (buffers) {
-            return new Response(new Blob(buffers, { type: contentTypeFor(splitPath) }), {
+            return new Response(new Blob(buffers, { type: contentTypeFor(url) }), {
               status: 200,
               statusText: "OK",
               headers: {
-                "Content-Type": contentTypeFor(splitPath),
-                "Content-Length": String(entry.size)
+                "Content-Type": contentTypeFor(url),
+                "Content-Length": String(entry.size || 0)
               }
             });
           });
-        };
-      }
-
-      var CACHE_NAME = "worldbox-cache-v1";
-      var CACHE_URLS = [
-        buildUrl + "/WorldFox.data",
-        buildUrl + "/WorldFox.framework.js",
-        buildUrl + "/WorldFox.wasm",
-        loaderUrl
-      ];
-
-      function preCacheAssets() {
-        return caches.open(CACHE_NAME).then(function (cache) {
-          var total = CACHE_URLS.length;
-          var done = 0;
-          return Promise.all(CACHE_URLS.map(function (url) {
-            return cache.match(url).then(function (cached) {
-              if (cached) {
-                done++;
-                progressBarFull.style.width = (done / total * 30) + "%";
-                return;
-              }
-              return fetch(url).then(function (response) {
-                if (response.ok) {
-                  cache.put(url, response.clone());
-                }
-                done++;
-                progressBarFull.style.width = (done / total * 30) + "%";
-              });
-            });
-          }));
-        });
-      }
-
-      function installCacheFetchInterceptor() {
-        var prev = window.fetch.bind(window);
-        window.fetch = function (input, init) {
-          var url = typeof input === "string" ? input : input.url;
-          var isBuildAsset = CACHE_URLS.some(function (u) { return url === u; });
-          if (isBuildAsset) {
-            return caches.open(CACHE_NAME).then(function (cache) {
-              return cache.match(url).then(function (cached) {
-                if (cached) return cached;
-                return prev(input, init).then(function (response) {
-                  if (response.ok) cache.put(url, response.clone());
-                  return response;
-                });
-              });
-            });
-          }
-          return prev(input, init);
         };
       }
 
       loadingBar.style.display = "block";
       progressBarFull.style.width = "0%";
 
-      preCacheAssets().then(function () {
-        return fetch(buildUrl + "/split-files.json").then(function (response) {
+      // Fetch split file manifest directly from CDN
+      fetch(buildUrl + "/split-files.json")
+        .then(function (response) {
           return response.ok ? response.json() : {};
-        }).catch(function () { return {}; });
-      }).then(function (manifest) {
-        installSplitFileLoader(manifest || {});
-        installCacheFetchInterceptor();
-        var script = document.createElement("script");
-        script.src = loaderUrl;
-        script.onload = function () {
-          createUnityInstance(canvas, config, function (progress) {
-            progressBarFull.style.width = (30 + 70 * progress) + "%";
-          }).then(function (unityInstance) {
-            loadingBar.style.display = "none";
-          }).catch(function (message) {
-            alert(message);
-          });
-        };
-        document.body.appendChild(script);
-      });
+        })
+        .catch(function () { return {}; })
+        .then(function (manifest) {
+          installSplitFileLoader(manifest || {});
+          var script = document.createElement("script");
+          script.src = loaderUrl;
+          script.onload = function () {
+            createUnityInstance(canvas, config, function (progress) {
+              progressBarFull.style.width = (100 * progress) + "%";
+            }).then(function (unityInstance) {
+              loadingBar.style.display = "none";
+            }).catch(function (message) {
+              alert(message);
+            });
+          };
+          document.body.appendChild(script);
+        });
     </script>
   </body>
 </html>
